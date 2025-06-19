@@ -2,7 +2,6 @@
 import cv2
 import numpy as np
 import streamlit as st
-import tempfile
 import math
 from PIL import Image
 from arrow_detector import detect_arrows, get_sector_from_mask, get_ring_from_distance
