@@ -1,125 +1,67 @@
+# arrow_detector.py
 import cv2
 import numpy as np
-import streamlit as st
-from PIL import Image
-import tempfile
 import math
 
-SECTOR_ANGLES = [
-    (351, 9, 6), (9, 27, 13), (27, 45, 4), (45, 63, 18), (63, 81, 1),
-    (81, 99, 20), (99, 117, 5), (117, 135, 12), (135, 153, 9),
-    (153, 171, 14), (171, 189, 11), (189, 207, 8), (207, 225, 16),
-    (225, 243, 7), (243, 261, 19), (261, 279, 3), (279, 297, 17),
-    (297, 315, 2), (315, 333, 15), (333, 351, 10)
-]
+def detect_arrows(img, template):
+    """
+    Deteksi panah dengan template matching. Mengembalikan list posisi head, tail, dan bounding box.
+    """
+    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray_template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
 
-def get_sector(angle):
-    for start, end, score in SECTOR_ANGLES:
-        if start > end:
-            if angle >= start or angle < end:
-                return score
-        else:
-            if start <= angle < end:
-                return score
-    return 0
+    res = cv2.matchTemplate(gray_img, gray_template, cv2.TM_CCOEFF_NORMED)
+    threshold = 0.5
+    loc = np.where(res >= threshold)
 
-def calculate_score(center_x, center_y, x, y):
-    dx, dy = x - center_x, y - center_y
-    distance = math.hypot(dx, dy)
-    angle = (math.degrees(math.atan2(-dy, dx)) + 360) % 360
-    sector_score = get_sector(angle)
+    h, w = gray_template.shape[:2]
+    arrows = []
+    for pt in zip(*loc[::-1]):
+        x, y = pt
+        box = (x, y, w, h)
 
-    if distance <= 15:
-        return 50  # Bullseye merah
-    elif distance <= 40:
-        return 25  # Bullseye hijau
-    elif 100 <= distance <= 110:
-        return sector_score * 3
-    elif 160 <= distance <= 170:
-        return sector_score * 2
-    elif distance <= 180:
-        return sector_score
-    else:
-        return 0
+        # Head default di pojok kiri atas (x, y)
+        head = (x, y)
+        tail = (x + w, y + h)
 
-def detect_darts_and_score(image_path):
-    img = cv2.imread(image_path)
-    if img is None:
-        return "Gambar tidak bisa dimuat.", None, None
-
-    img = cv2.resize(img, (600, 600))  # skala 1:1 (kotak)
-    output = img.copy()
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    lower_red1 = np.array([0, 100, 100])
-    upper_red1 = np.array([10, 255, 255])
-    lower_red2 = np.array([160, 100, 100])
-    upper_red2 = np.array([179, 255, 255])
-    lower_green = np.array([40, 40, 40])
-    upper_green = np.array([90, 255, 255])
-
-    mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
-    mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
-    mask_red = cv2.bitwise_or(mask_red1, mask_red2)
-    mask_green = cv2.inRange(hsv, lower_green, upper_green)
-
-    contours_red, _ = cv2.findContours(mask_red, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    contours_green, _ = cv2.findContours(mask_green, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-    all_contours = sorted(contours_red + contours_green, key=cv2.contourArea, reverse=True)[:10]
-
-    score_summary = []
-    total_score = 0
-    center_x, center_y = 300, 300
-
-    for i, cnt in enumerate(all_contours):
-        area = cv2.contourArea(cnt)
-        if area > 100:
-            # Ambil titik head sebagai titik terjauh dari pusat
-            head_point = max(cnt, key=lambda p: math.hypot(p[0][0] - center_x, p[0][1] - center_y))[0]
-            head_x, head_y = head_point[0], head_point[1]
-
-            # Titik pusat kontur sebagai tail
-            M = cv2.moments(cnt)
-            if M['m00'] == 0:
-                continue
-            tail_x = int(M['m10'] / M['m00'])
-            tail_y = int(M['m01'] / M['m00'])
-
-            distance = math.hypot(head_x - center_x, head_y - center_y)
-            if distance > 180:
-                continue
-
-            score = calculate_score(center_x, center_y, head_x, head_y)
-            total_score += score
-
-            # Gambar panah arah dari tail ke head
-            cv2.arrowedLine(output, (tail_x, tail_y), (head_x, head_y), (0, 255, 0), 2, tipLength=0.4)
-
-            score_summary.append(f"Panah {i+1}: Head x={head_x}, y={head_y} → {score} poin")
-
-    return score_summary, output, total_score
-
-def run_web_app():
-    st.set_page_config(layout="centered", page_title="Dart Score Analyzer 2.3")
-    st.title("🎯 Dart Score Analyzer 2.3 — Panah Hijau ke Arah Tancapan")
-    st.write("Gunakan kamera dalam rasio **kotak (1:1)**. Sistem akan menggambar arah panah hijau ke titik tancapan.")
-
-    camera_image = st.camera_input("📷 Ambil Foto Dartboard (Kotak 1:1)")
-
-    if camera_image is not None:
-        if st.button("✔️ Proses Gambar"):
-            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-                tmp_file.write(camera_image.getbuffer())
-                temp_path = tmp_file.name
-            scores, result_img, total = detect_darts_and_score(temp_path)
-            if isinstance(scores, str):
-                st.error(scores)
+        # Koreksi orientasi: deteksi sudut dominan dalam bounding box (versi sederhana)
+        arrow_crop = gray_img[y:y+h, x:x+w]
+        edges = cv2.Canny(arrow_crop, 50, 150)
+        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20, minLineLength=10, maxLineGap=5)
+        if lines is not None:
+            longest = max(lines, key=lambda l: np.hypot(l[0][2]-l[0][0], l[0][3]-l[0][1]))[0]
+            hx, hy = longest[0] + x, longest[1] + y
+            tx, ty = longest[2] + x, longest[3] + y
+            if np.hypot(hx - x, hy - y) > np.hypot(tx - x, ty - y):
+                head, tail = (tx, ty), (hx, hy)
             else:
-                st.image(result_img, caption="📸 Hasil Deteksi Panah (Arah Hijau ke Head)", channels="BGR")
-                st.subheader("📋 Hasil Deteksi Panah:")
-                for score in scores:
-                    st.text(score)
-                st.success(f"🎯 Total Skor Kamu: {total} poin")
+                head, tail = (hx, hy), (tx, ty)
 
-run_web_app()
+        arrows.append({"box": box, "head": head, "tail": tail})
+
+    return arrows
+
+def get_sector_from_mask(head_point, sector_mask):
+    """
+    Menentukan sektor berdasarkan masking segitiga radial yang sudah disiapkan sebelumnya.
+    """
+    if sector_mask is None:
+        return None
+    val = sector_mask[head_point[1], head_point[0]]
+    return int(val) if val > 0 else None
+
+def get_ring_from_distance(center, head):
+    dx, dy = head[0] - center[0], head[1] - center[1]
+    dist = math.hypot(dx, dy)
+    if dist <= 15:
+        return "bullseye", 50
+    elif dist <= 40:
+        return "bull", 25
+    elif 100 <= dist <= 110:
+        return "triple", 3
+    elif 160 <= dist <= 170:
+        return "double", 2
+    elif dist <= 180:
+        return "normal", 1
+    else:
+        return "miss", 0
