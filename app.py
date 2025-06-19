@@ -1,4 +1,3 @@
-# app_v3_1.py
 import cv2
 import numpy as np
 import streamlit as st
@@ -25,8 +24,8 @@ if camera_image is not None and st.button("✔️ Proses Gambar"):
     img = cv2.imread(img_path)
     img = cv2.resize(img, (600, 600))
 
-    # Load template dan masker sektor
-    template = cv2.imread("arrow_template.png")  # Template buatan Mas
+    # Load template buatan Mas dan masker sektor
+    template = cv2.imread("arrow_template.png")  # ← buatan Mas
     sector_mask = cv2.imread("mask_sector_20.png", cv2.IMREAD_GRAYSCALE)
     center = (300, 300)
 
@@ -39,7 +38,6 @@ if camera_image is not None and st.button("✔️ Proses Gambar"):
         head = arrow["head"]
         tail = arrow["tail"]
 
-        # Dapatkan sektor
         sector = get_sector_from_mask(head, sector_mask)
         ring_name, ring_multiplier = get_ring_from_distance(center, head)
 
@@ -48,12 +46,10 @@ if camera_image is not None and st.button("✔️ Proses Gambar"):
         else:
             score = 0
 
-        # Gambar arah panah
         cv2.arrowedLine(img, tail, head, (0, 255, 0), 2, tipLength=0.4)
         total_score += score
         score_log.append(f"Panah {i+1}: Head {head} → Sektor {sector} ({ring_name}) → {score} poin")
 
-    # Tampilkan hasil
     st.image(img, caption="📸 Deteksi Panah & Sektor", channels="BGR")
     st.subheader("📋 Detail Skor:")
     for row in score_log:
