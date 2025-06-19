@@ -75,9 +75,16 @@ def detect_darts_and_score(image_path):
     for i, cnt in enumerate(all_contours):
         area = cv2.contourArea(cnt)
         if area > 100:
-            # Gunakan titik paling jauh dari pusat sebagai head
+            # Ambil titik head sebagai titik terjauh dari pusat
             head_point = max(cnt, key=lambda p: math.hypot(p[0][0] - center_x, p[0][1] - center_y))[0]
             head_x, head_y = head_point[0], head_point[1]
+
+            # Titik pusat kontur sebagai tail
+            M = cv2.moments(cnt)
+            if M['m00'] == 0:
+                continue
+            tail_x = int(M['m10'] / M['m00'])
+            tail_y = int(M['m01'] / M['m00'])
 
             distance = math.hypot(head_x - center_x, head_y - center_y)
             if distance > 180:
@@ -86,17 +93,19 @@ def detect_darts_and_score(image_path):
             score = calculate_score(center_x, center_y, head_x, head_y)
             total_score += score
 
-            cv2.rectangle(output, (head_x - 10, head_y - 10), (head_x + 10, head_y + 10), (0, 255, 0), 2)
+            # Gambar panah arah dari tail ke head
+            cv2.arrowedLine(output, (tail_x, tail_y), (head_x, head_y), (0, 255, 0), 2, tipLength=0.4)
+
             score_summary.append(f"Panah {i+1}: Head x={head_x}, y={head_y} → {score} poin")
 
     return score_summary, output, total_score
 
 def run_web_app():
-    st.set_page_config(layout="centered", page_title="Dart Score Analyzer 2.2")
-    st.title("🎯 Dart Score Analyzer 2.2 — Akurasi Head Panah & Kamera Kotak")
-    st.write("Gunakan kamera dengan orientasi **kotak (1:1)** dan pastikan papan dart terlihat penuh.")
+    st.set_page_config(layout="centered", page_title="Dart Score Analyzer 2.3")
+    st.title("🎯 Dart Score Analyzer 2.3 — Panah Hijau ke Arah Tancapan")
+    st.write("Gunakan kamera dalam rasio **kotak (1:1)**. Sistem akan menggambar arah panah hijau ke titik tancapan.")
 
-    camera_image = st.camera_input("📷 Ambil Foto Dartboard (1:1 Kotak)")
+    camera_image = st.camera_input("📷 Ambil Foto Dartboard (Kotak 1:1)")
 
     if camera_image is not None:
         if st.button("✔️ Proses Gambar"):
@@ -107,7 +116,7 @@ def run_web_app():
             if isinstance(scores, str):
                 st.error(scores)
             else:
-                st.image(result_img, caption="📸 Hasil Deteksi Panah (Head Tracking)", channels="BGR")
+                st.image(result_img, caption="📸 Hasil Deteksi Panah (Arah Hijau ke Head)", channels="BGR")
                 st.subheader("📋 Hasil Deteksi Panah:")
                 for score in scores:
                     st.text(score)
