@@ -29,17 +29,18 @@ def calculate_score(center_x, center_y, x, y):
     angle = (math.degrees(math.atan2(-dy, dx)) + 360) % 360
     sector_score = get_sector(angle)
 
-    # Ring detection (approximate)
     if distance <= 15:
         return 50  # Bullseye merah
     elif distance <= 40:
         return 25  # Bullseye hijau
     elif 100 <= distance <= 110:
-        return sector_score * 3  # Triple ring
+        return sector_score * 3
     elif 160 <= distance <= 170:
-        return sector_score * 2  # Double ring
-    else:
+        return sector_score * 2
+    elif distance <= 180:
         return sector_score
+    else:
+        return 0
 
 def detect_darts_and_score(image_path):
     img = cv2.imread(image_path)
@@ -74,20 +75,35 @@ def detect_darts_and_score(image_path):
     for i, cnt in enumerate(all_contours):
         area = cv2.contourArea(cnt)
         if area > 80:
-            M = cv2.moments(cnt)
-            if M['m00'] != 0:
-                x = int(M['m10'] / M['m00'])
-                y = int(M['m01'] / M['m00'])
-                score = calculate_score(center_x, center_y, x, y)
-                total_score += score
-                cv2.rectangle(output, (x-15, y-15), (x+15, y+15), (255, 255, 0), 2)
-                score_summary.append(f"Panah {i+1}: Lokasi x={x}, y={y} → {score} poin")
+            x, y, w, h = cv2.boundingRect(cnt)
+
+            # Koreksi arah panah dari persegi panjang (mengasumsikan head berada di ujung)
+            if h > w:
+                head_x = x + w // 2
+                head_y = y  # atas
+            else:
+                head_x = x
+                head_y = y + h // 2  # kiri
+
+            dx, dy = head_x - center_x, head_y - center_y
+            distance = math.hypot(dx, dy)
+            if distance > 180:
+                continue  # Abaikan panah di luar papan dart
+
+            score = calculate_score(center_x, center_y, head_x, head_y)
+            total_score += score
+
+            # Tampilkan kotak hanya di ujung
+            cv2.rectangle(output, (head_x - 10, head_y - 10), (head_x + 10, head_y + 10), (0, 255, 0), 2)
+            score_summary.append(
+                f"Panah {i+1}: Head x={head_x}, y={head_y} → {score} poin"
+            )
 
     return score_summary, output, total_score
 
 def run_web_app():
-    st.title("🎯 Dart Score Analyzer 2.0")
-    st.write("Ambil gambar dartboard langsung dari kamera, lalu klik tombol ✔️ untuk deteksi panah dan hitung skor.")
+    st.title("🎯 Dart Score Analyzer 2.1 — Koreksi Titik Head Panah")
+    st.write("Ambil gambar dartboard dari kamera, lalu klik ✔️ untuk hitung skor berdasarkan titik ujung panah (head).")
 
     camera_image = st.camera_input("📷 Ambil Foto Dartboard")
 
@@ -100,10 +116,10 @@ def run_web_app():
             if isinstance(scores, str):
                 st.error(scores)
             else:
-                st.image(result_img, caption="📸 Hasil Deteksi Panah", channels="BGR")
+                st.image(result_img, caption="📸 Hasil Deteksi Panah (Head Only)", channels="BGR")
                 st.subheader("📋 Hasil Deteksi Panah:")
                 for score in scores:
                     st.text(score)
-                st.success(f"🎉 Total Skor Kamu: {total} poin")
+                st.success(f"🎯 Total Skor Kamu: {total} poin")
 
 run_web_app()
