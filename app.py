@@ -1,67 +1,61 @@
-# arrow_detector.py
+# app_v3_1.py
 import cv2
 import numpy as np
+import streamlit as st
+import tempfile
 import math
+from PIL import Image
+from arrow_detector import detect_arrows, get_sector_from_mask, get_ring_from_distance
 
-def detect_arrows(img, template):
-    """
-    Deteksi panah dengan template matching. Mengembalikan list posisi head, tail, dan bounding box.
-    """
-    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray_template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+st.set_page_config(layout="centered", page_title="Dart Score Analyzer 3.1")
+st.title("🎯 Dart Score Analyzer 3.1 - Template + Sector Masking")
 
-    res = cv2.matchTemplate(gray_img, gray_template, cv2.TM_CCOEFF_NORMED)
-    threshold = 0.5
-    loc = np.where(res >= threshold)
+st.markdown("""
+Gunakan kamera 1:1 untuk mengambil gambar dartboard secara lurus. 
+Sistem akan mengenali arah panah menggunakan **template panah** dan menentukan skor berdasarkan **masking sektor**.
+""")
 
-    h, w = gray_template.shape[:2]
-    arrows = []
-    for pt in zip(*loc[::-1]):
-        x, y = pt
-        box = (x, y, w, h)
+camera_image = st.camera_input("📷 Ambil Gambar Dartboard")
 
-        # Head default di pojok kiri atas (x, y)
-        head = (x, y)
-        tail = (x + w, y + h)
+if camera_image is not None and st.button("✔️ Proses Gambar"):
+    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        tmp_file.write(camera_image.getbuffer())
+        img_path = tmp_file.name
 
-        # Koreksi orientasi: deteksi sudut dominan dalam bounding box (versi sederhana)
-        arrow_crop = gray_img[y:y+h, x:x+w]
-        edges = cv2.Canny(arrow_crop, 50, 150)
-        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20, minLineLength=10, maxLineGap=5)
-        if lines is not None:
-            longest = max(lines, key=lambda l: np.hypot(l[0][2]-l[0][0], l[0][3]-l[0][1]))[0]
-            hx, hy = longest[0] + x, longest[1] + y
-            tx, ty = longest[2] + x, longest[3] + y
-            if np.hypot(hx - x, hy - y) > np.hypot(tx - x, ty - y):
-                head, tail = (tx, ty), (hx, hy)
-            else:
-                head, tail = (hx, hy), (tx, ty)
+    img = cv2.imread(img_path)
+    img = cv2.resize(img, (600, 600))
 
-        arrows.append({"box": box, "head": head, "tail": tail})
+    # Load template dan masker sektor
+    template = cv2.imread("arrow_template.png")
+    sector_mask = cv2.imread("mask_sector_20.png", cv2.IMREAD_GRAYSCALE)
+    center = (300, 300)
 
-    return arrows
+    # Deteksi panah
+    arrows = detect_arrows(img, template)
+    total_score = 0
+    score_log = []
 
-def get_sector_from_mask(head_point, sector_mask):
-    """
-    Menentukan sektor berdasarkan masking segitiga radial yang sudah disiapkan sebelumnya.
-    """
-    if sector_mask is None:
-        return None
-    val = sector_mask[head_point[1], head_point[0]]
-    return int(val) if val > 0 else None
+    for i, arrow in enumerate(arrows):
+        head = arrow["head"]
+        tail = arrow["tail"]
 
-def get_ring_from_distance(center, head):
-    dx, dy = head[0] - center[0], head[1] - center[1]
-    dist = math.hypot(dx, dy)
-    if dist <= 15:
-        return "bullseye", 50
-    elif dist <= 40:
-        return "bull", 25
-    elif 100 <= dist <= 110:
-        return "triple", 3
-    elif 160 <= dist <= 170:
-        return "double", 2
-    elif dist <= 180:
-        return "normal", 1
-    else:
-        return "miss", 0
+        # Dapatkan sektor
+        sector = get_sector_from_mask(head, sector_mask)
+        ring_name, ring_multiplier = get_ring_from_distance(center, head)
+
+        if sector is not None and ring_multiplier > 0:
+            score = sector * ring_multiplier
+        else:
+            score = 0
+
+        # Gambar arah panah
+        cv2.arrowedLine(img, tail, head, (0, 255, 0), 2, tipLength=0.4)
+        total_score += score
+        score_log.append(f"Panah {i+1}: Head {head} → Sektor {sector} ({ring_name}) → {score} poin")
+
+    # Tampilkan hasil
+    st.image(img, caption="📸 Deteksi Panah & Sektor", channels="BGR")
+    st.subheader("📋 Detail Skor:")
+    for row in score_log:
+        st.text(row)
+    st.success(f"🎯 Total Skor Kamu: {total_score} poin")
