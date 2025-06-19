@@ -2,6 +2,7 @@
 import cv2
 import numpy as np
 import streamlit as st
+import tempfile
 import math
 from PIL import Image
 from arrow_detector import detect_arrows, get_sector_from_mask, get_ring_from_distance
@@ -25,7 +26,7 @@ if camera_image is not None and st.button("✔️ Proses Gambar"):
     img = cv2.resize(img, (600, 600))
 
     # Load template dan masker sektor
-    template = cv2.imread("arrow_template.png")
+    template = cv2.imread("arrow_template.png")  # Template buatan Mas
     sector_mask = cv2.imread("mask_sector_20.png", cv2.IMREAD_GRAYSCALE)
     center = (300, 300)
 
