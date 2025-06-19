@@ -6,6 +6,11 @@ def detect_arrows(image, template, threshold=0.7):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
 
+    # Cek ukuran template dan gambar
+    if gray.shape[0] < template_gray.shape[0] or gray.shape[1] < template_gray.shape[1]:
+        print("❌ Ukuran template lebih besar dari gambar. Resize template atau gambar terlebih dahulu.")
+        return []
+
     result = cv2.matchTemplate(gray, template_gray, cv2.TM_CCOEFF_NORMED)
     loc = np.where(result >= threshold)
 
